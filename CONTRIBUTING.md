@@ -15,18 +15,29 @@ git clone https://github.com/And8j/New_Project_telegram_bot.git
 cd New_Project_telegram_bot
 ```
 
-3. **Create a virtual environment and activate it**:
+**🧩 Environment Setup**:  
+
+   We recommend using [`uv`](https://github.com/astral-sh/uv) — a modern, fast Python package and environment manager that replaces `venv` and `pip`.  
+   
+3. **Install `uv`:**
+
+```bash
+pip install pipx
+pipx install uv
 ```
-python3 -m venv venv
-source venv/bin/activate  # For Unix/macOS
-# OR
-venv\Scripts\activate     # For Windows
+4. **Create and activate virtual environment:**
 ```
-4. **Install dependencies:**
+uv venv
 ```
-pip install -r requirements.txt
+5. **Install dependencies:**
 ```
-5. **Create a new branch for your feature or fix:**
+  uv pip install -r requirements.txt
+```
+6. **(Optional) Compile a clean requirements.txt:**
+```
+uv pip compile -o requirements.txt
+```
+7. **Create a new branch for your feature or fix:**
 ```
 git checkout -b feature/your-feature-name
 ```
@@ -83,6 +94,8 @@ project/
 ├── README.md
 └── CONTRIBUTING.md
 ```
+⚠️ .venv/ is created by uv venv and should be excluded from Git using .gitignore.  
+
 ### Thank You
 Your contributions are highly appreciated!  
 Feel free to open an issue if you have questions or ideas.
