@@ -8,17 +8,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Get the bot token from environment variables
-TOKEN = getenv("BOT_TOKEN")
-
-# Check if the token is set
-if not TOKEN:
-    print("❌ BOT_TOKEN not set in .env file or environment variables.")
-    sys.exit(1)
+from src.config.config import BOT_TOKEN
 
 # Create a Dispatcher instance
 dp = Dispatcher()
@@ -40,7 +30,7 @@ async def command_help_handler(message: types.Message) -> None:
 async def main():
     # Initialize the Bot
     bot = Bot(
-        token=TOKEN,
+        token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
