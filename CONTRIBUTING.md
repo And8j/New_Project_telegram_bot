@@ -85,14 +85,23 @@ docs: update README with environment variables
 ```
 project/
 │
-├── bot/                # Telegram bot logic
-├── database/           # Database models and connection
-├── config/             # Environment/configuration settings
-├── tests/              # Unit and integration tests
-├── requirements.txt    # Python dependencies
-├── .env.example        # Example of required environment variables
-├── README.md
-└── CONTRIBUTING.md
+├── bot/                        # Entry point for the Telegram bot (main.py)
+│
+├── src/                        # Main application logic
+│   ├── config/                 # Configuration and environment variables
+│   ├── handlers/               # Telegram message handlers
+│   ├── models/                 # Pydantic or ORM models
+│   ├── repositories/           # Data access layer
+│   ├── services/               # Business logic and services
+│   └── utils/                  # Utility functions and helpers
+│
+├── tests/                      # Unit and integration tests
+│
+├── .github/                    # GitHub-specific files (e.g. PR templates)
+│   └── pull_request_template.md
+│
+├── .gitignore                  # Git ignore rules
+└── CONTRIBUTING.md             # Contribution guidelines
 ```
 ⚠️ .venv/ is created by uv venv and should be excluded from Git using .gitignore.  
 
