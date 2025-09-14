@@ -1,30 +1,18 @@
 import asyncio
 import logging
 import sys
-from os import getenv
 
-from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
+from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from src.config.config import BOT_TOKEN
+from src.handlers import register_all_handlers
 
 # Create a Dispatcher instance
 dp = Dispatcher()
 
-# --- Handlers section ---
-# Handler for the /start command
-@dp.message(CommandStart())
-async def command_start_handler(message: types.Message) -> None:
-    await message.answer(f"Hello, {message.from_user.full_name}!")
-
-# Handler for the /help command
-@dp.message(Command("help"))
-async def command_help_handler(message: types.Message) -> None:
-    await message.answer("I can help you with many things.")
-
-# --- End of handlers section ---
+# Register all handlers
+register_all_handlers(dp)
 
 # Main asynchronous function to start the bot
 async def main():
@@ -39,6 +27,8 @@ async def main():
     try:
         # Start long polling
         await dp.start_polling(bot)
+    except Exception as e:
+        logging.error("❌ Unexpected error during bot polling:", exc_info=e)
     finally:
         # Close the bot's session on shutdown
         await bot.session.close()
