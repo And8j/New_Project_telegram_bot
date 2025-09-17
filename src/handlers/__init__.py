@@ -1,6 +1,10 @@
-from .start import register_start_handler
-from .help import register_help_handler
+# src/handlers/__init__.py
 
-def register_all_handlers(dp):
-    register_start_handler(dp)
-    register_help_handler(dp)
+from .start import router as start_router
+from .help import router as help_router
+
+# list of routers for Dispatcher
+routers = [
+    start_router,
+    help_router,
+]

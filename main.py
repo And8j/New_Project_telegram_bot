@@ -6,13 +6,14 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from src.config.config import BOT_TOKEN
-from src.handlers import register_all_handlers
+from src.handlers import routers
 
 # Create a Dispatcher instance
 dp = Dispatcher()
 
-# Register all handlers
-register_all_handlers(dp)
+# Register all routers
+for router in routers:
+    dp.include_router(router)
 
 # Main asynchronous function to start the bot
 async def main():
