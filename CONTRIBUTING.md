@@ -89,7 +89,11 @@ project/
 │
 ├── src/                        # Main application logic
 │   ├── config/                 # Configuration and environment variables
+│   │   └── config.py
 │   ├── handlers/               # Telegram message handlers
+│   │   ├── __init__.py      
+│   │   ├── help.py          
+│   │   └── start.py 
 │   ├── models/                 # Pydantic or ORM models
 │   ├── repositories/           # Data access layer
 │   ├── services/               # Business logic and services
