@@ -7,15 +7,18 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from src.config.config import BOT_TOKEN
 from src.handlers import router 
+# from src.database.manager import DatabaseManager
 
-# Create a Dispatcher instance
 dp = Dispatcher()
-
-# Include the main router into the dispatcher
 dp.include_router(router)
+
+# db = DatabaseManager()
 
 # Main asynchronous function to start the bot
 async def main():
+    # Initializing the database before starting the bot
+    # db.init_database()
+    
     # Initialize the Bot
     bot = Bot(
         token=BOT_TOKEN,
