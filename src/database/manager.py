@@ -1,73 +1,229 @@
-import sqlite3
-from queue import Queue
-from threading import Lock
-from pathlib import Path
+import logging
+import os
+import sys
+
+
+from sqlalchemy import (
+    create_engine, Column, Integer, BigInteger, Text, Numeric,
+    DateTime, ForeignKey, Index
+)
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.sql import func
+from sqlalchemy.exc import SQLAlchemyError
 from contextlib import contextmanager
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Base class for your SQLAlchemy ORM models
+# SELECT * FROM users;
+# ['1, 1234, john, johnny, 2025-01-01 12:00:00+00']
+Base = declarative_base()
+
+class User(Base):
+    """
+    Represents a user in the system, typically a Telegram user.
+    """
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, autoincrement=True) # Unique identifier for the user (SERIAL)
+    telegram_id = Column(BigInteger, nullable=False, unique=True) # Telegram user ID, must be unique
+    full_name = Column(Text, nullable=False) # User's full name
+    username = Column(Text) # User's Telegram username (optional)
+    created_at = Column(DateTime(timezone=True), server_default=func.now()) # Timestamp of user creation (TIMESTAMPTZ DEFAULT NOW())
+
+    # Relationships:
+    categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
+    expenses = relationship("Expense", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, telegram_id={self.telegram_id}, full_name='{self.full_name}')>"
+
+class Category(Base):
+    """
+    Represents an expense/income category belonging to a specific user.
+    """
+    __tablename__ = 'categories'
+    id = Column(Integer, primary_key=True, autoincrement=True) # Unique identifier for the category (SERIAL)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False) # Foreign key to the User table. If user is deleted, categories are deleted.
+    name = Column(Text, nullable=False) # Name of the category
+    description = Column(Text) # Optional description for the category
+
+    # Relationship:
+    user = relationship("User", back_populates="categories")
+    expenses = relationship("Expense", back_populates="category", cascade="all, delete-orphan")
+
+    # Table arguments for unique constraints and indexes:
+    __table_args__ = (
+        Index('idx_categories_user_id_lower_name_unique', user_id, func.lower(name), unique=True), 
+    )
+
+    def __repr__(self):
+        return f"<Category(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
+
+class TransactionType(Base):
+    """
+    Represents the type of a financial transaction (e.g., expense, income, transfer).
+    These are typically predefined and not user-specific.
+    """
+    __tablename__ = 'transaction_types'
+    id = Column(Integer, primary_key=True, autoincrement=True) # Unique identifier for the transaction type (SERIAL)
+    name = Column(Text, nullable=False, unique=True) # Name of the transaction type (e.g., 'expense', 'income'), must be unique
+    icon = Column(Text) # Optional icon (e.g., emoji) for the transaction type
+
+    # Relationship:
+    expenses = relationship("Expense", back_populates="type")
+
+    def __repr__(self):
+        return f"<TransactionType(id={self.id}, name='{self.name}')>"
+
+class Expense(Base):
+    """
+    Represents a single financial transaction (expense or income).
+    """
+    __tablename__ = 'expenses'
+    id = Column(Integer, primary_key=True, autoincrement=True) # Unique identifier for the expense (SERIAL)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False) # Foreign key to the User table. If user is deleted, expenses are deleted.
+    category_id = Column(Integer, ForeignKey('categories.id', ondelete='SET NULL')) # Foreign key to the Category table. If category is deleted, this field is set to NULL.
+    type_id = Column(Integer, ForeignKey('transaction_types.id'), nullable=False) # Foreign key to TransactionType, cannot be NULL.
+    amount = Column(Numeric(10, 2), nullable=False) # Amount of the transaction with 10 total digits and 2 decimal places.
+    currency = Column(Text, default='USD') # Currency code (e.g., 'USD', 'EUR'), defaults to 'USD'
+    description = Column(Text) # Optional description for the expense
+    created_at = Column(DateTime(timezone=True), server_default=func.now()) # Timestamp of expense creation (TIMESTAMPTZ DEFAULT NOW())
+
+    # Relationships:
+    user = relationship("User", back_populates="expenses")
+    category = relationship("Category", back_populates="expenses")
+    type = relationship("TransactionType", back_populates="expenses")
+
+    # Indexes for performance:
+    __table_args__ = (
+        Index('idx_expenses_created_at', created_at),
+        Index('idx_expenses_user_id', user_id),
+    )
+
+    def __repr__(self):
+        return f"<Expense(id={self.id}, user_id={self.user_id}, amount={self.amount}, type='{self.type.name if self.type else 'N/A'}')>"
+
+class DefaultCategory(Base):
+    """
+    Represents a predefined default category that can be offered to new users.
+    These are global categories, not tied to a specific user initially.
+    """
+    __tablename__ = 'default_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True) # Unique identifier for the default category (SERIAL)
+    name = Column(Text, nullable=False, unique=True) # Name of the default category, must be unique
+
+    def __repr__(self):
+        return f"<DefaultCategory(id={self.id}, name='{self.name}')>"
+
+# --- DatabaseManager Class ---
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "data/database.db", pool_size: int = 10):
-        self.db_path = db_path
-        self.pool_size = pool_size
-        self.pool = Queue(maxsize=pool_size)
-        self.lock = Lock()
+    """
+    Manages the SQLAlchemy engine and session factory, and provides methods
+    for database initialization and session handling.
+    """
+    def __init__(self, db_url: str, pool_size: int = 10, max_overflow: int = 20):
+        self.db_url = db_url
+        self.engine = create_engine(
+            db_url,
+            echo=False,  # Set to True to see all SQL queries in the console
+            pool_size=pool_size, # Number of connections to keep open in the pool
+            max_overflow=max_overflow, # Number of connections that can be opened beyond pool_size
+            pool_recycle=3600, # Recycle connections after 1 hour (prevent stale connections)
+            pool_pre_ping=True # Test connections for liveness before use
+        )
+        self.Session = sessionmaker(bind=self.engine) # Factory for creating new session objects
+        logger.info(f"✅ SQLAlchemy Engine created for {self.db_url}")
 
-        # I first create a connection pool.
-        for _ in range(pool_size):
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            self.pool.put(conn)
-
-    def init_database(self, schema_path: str = "src/database/schema.sql"):
+    def init_database(self):
         """
-        I initialize the database by creating tables from schema.sql.
+        Initializes the database by creating all tables defined in the ORM models
+        if they do not already exist.
         """
-        schema_file = Path(schema_path)
-        if not schema_file.exists():
-            raise FileNotFoundError(f"❌ Schema file not found: {schema_path}")
-
-        with open(schema_file, "r", encoding="utf-8") as f:
-            schema_sql = f.read()
-
-        with self.connection() as conn:
-            conn.executescript(schema_sql)
-            conn.commit()
+        logger.info("⏳ Initializing database using SQLAlchemy ORM Base.metadata...")
+        try:
+            Base.metadata.create_all(self.engine)
+            logger.info("✅ Database tables created via ORM Base.metadata.")
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Error creating tables via ORM Base.metadata: {e}", exc_info=True)
+            raise
 
     @contextmanager
-    def connection(self):
+    def get_session(self):
         """
-        Context manager for getting a connection from the pool.
+        Provides a transactional SQLAlchemy ORM session via a context manager.
+        Ensures proper session lifecycle management (commit, rollback, close).
         """
-        conn = self.pool.get()
+        session = self.Session()
         try:
-            yield conn
+            yield session
+            session.commit()
+        except SQLAlchemyError as e: # Явно вказуємо 'as e' для логування, якщо це потрібно
+            session.rollback()
+            logger.error(f"❌ Database session rolled back due to error: {e}", exc_info=True)
+            raise
         finally:
-            self.pool.put(conn)
-
-    def execute_query(self, query: str, params: tuple = ()):
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            conn.commit()
-            return cursor.lastrowid
-
-    def fetch_one(self, query: str, params: tuple = ()):
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchone()
-
-    def fetch_all(self, query: str, params: tuple = ()):
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchall()
+            session.close()
 
     def close_all_connections(self):
         """
-        Close all connections before the program ends.
+        Disposes of all connections in the connection pool, closing them.
+        Should be called when the application is shutting down.
         """
-        with self.lock:
-            while not self.pool.empty():
-                conn = self.pool.get()
-                conn.close()
+        self.engine.dispose()
+        logger.info("🔌 All SQLAlchemy connections disposed.")
+
+# --- DatabaseManager Initialization and Initial Data Functions ---
+
+# Database connection URL, now fetched from environment variables
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    logger.critical("❌ Error: DATABASE_URL environment variable is not set. Please check your .env file or environment configuration.")
+    sys.exit(1) # Exit if the critical variable is missing
+
+# Initialization happens here, при імпорті модуля
+db_manager = DatabaseManager(DATABASE_URL)
+
+def add_initial_transaction_types():
+    """
+    Ensures that default transaction types (expense, income, transfer) exist in the database.
+    This should be called once after database initialization.
+    """
+    with db_manager.get_session() as session:
+        # Оптимізована перевірка для уникнення кількох запитів до БД
+        expected_types = {'expense', 'income', 'transfer'}
+        existing_types = {tt.name for tt in session.query(TransactionType).filter(TransactionType.name.in_(list(expected_types))).all()}
+
+        for name in expected_types:
+            if name not in existing_types:
+                icon = ''
+                if name == 'expense': icon = '💸'
+                elif name == 'income': icon = '💰'
+                elif name == 'transfer': icon = '➡️'
+                session.add(TransactionType(name=name, icon=icon))
+        logger.info("Initial transaction types added/checked.")
+
+def add_default_categories():
+    """
+    Ensures that a set of predefined default categories exist in the database.
+    These can be used as templates for new users' categories.
+    This should be called once after database initialization.
+    """
+    with db_manager.get_session() as session:
+        default_category_names = ['Їжа', 'Транспорт', 'Розваги']
+        existing_categories = {dc.name for dc in session.query(DefaultCategory).filter(DefaultCategory.name.in_(default_category_names)).all()}
+
+        for name in default_category_names:
+            if name not in existing_categories:
+                session.add(DefaultCategory(name=name))
+        logger.info("Initial default categories added/checked.")
+
+def setup_initial_data():
+    """
+    A convenience function to run all initial data setup tasks.
+    """
+    logger.info("⏳ Setting up initial data (transaction types, default categories)...")
+    add_initial_transaction_types()
+    add_default_categories()
+    logger.info("✅ Initial data setup complete.")
