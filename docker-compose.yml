@@ -1,35 +1,69 @@
 version: '3.8'
 
 services:
+  # Database Service (PostgreSQL)
   db:
     image: postgres:14-alpine
     container_name: postgres_db
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=telegram_bot
+    env_file:
+      - ./.env # Loads environment variables for the DB (e.g., POSTGRES_USER, POSTGRES_DB)
     volumes:
-      - ./src/database/schema.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5432:5432" # Exposes DB port to the host machine (optional, useful for debugging)
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # Application Service (Telegram Bot)
   app:
-    build: .
+    build: . # Builds the image using the Dockerfile in the current directory
     container_name: telegram_bot_app
-    depends_on:
-      - db
-    environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=telegram_bot
-      - DB_HOST=db
-      - DB_PORT=5432
+    env_file:
+      - ./.env # Loads general environment variables (e.g., BOT_TOKEN, DATABASE_URL)
     volumes:
-      - .:/app
+      - .:/app # Mounts the local directory to /app for live code changes
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy # Ensures the DB is ready before starting the bot
+
+  # Migration Service (Runs Alembic)
+  migration:
+    build: . # Uses the same Dockerfile as the 'app' service
+    container_name: alembic_migration
+    # The command to execute the initial migration inside the container
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - ./.env # Necessary to load DATABASE_URL containing 'db' as host
+    volumes:
+    - .:/app # Mounts the volume so the generated migration file is saved locally
+    depends_on:
+      db:
+        condition: service_healthy # Must wait for the database to be fully ready
+    restart: "no" # Do not restart this container after it completes its command
+
+  # PGAdmin Service (Optional Web UI for PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_ui
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
 
 volumes:
   postgres_data:
+  pgadmin_data:

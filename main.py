@@ -8,38 +8,48 @@ from aiogram.client.default import DefaultBotProperties
 from src.config.config import BOT_TOKEN
 from src.handlers import router 
 
-# Create a Dispatcher instance
-dp = Dispatcher()
+# Configure logging once at the very beginning
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Include the main router into the dispatcher
+dp = Dispatcher()
 dp.include_router(router)
 
 # Main asynchronous function to start the bot
 async def main():
+    """
+    Main entry point for the bot application.
+    Initializes the database and starts the bot polling.
+    """
     # Initialize the Bot
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
-    logging.info("🤖 Bot is starting...")
+    logger.info("🤖 Bot is starting...")
 
     try:
         # Start long polling
         await dp.start_polling(bot)
-    except Exception as e:
-        logging.error("❌ Unexpected error during bot polling:", exc_info=e)
+    except Exception as e: # Catching general exceptions during bot polling
+        logger.error("❌ Unexpected error during bot polling:", exc_info=e)
     finally:
         # Close the bot's session on shutdown
         await bot.session.close()
-        logging.info("🛑 Bot stopped gracefully.")
+        logger.info("🛑 Bot stopped gracefully.")
 
 # Entry point of the program
 if __name__ == "__main__":
-    # Configure logging
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-
+    # The basicConfig for logging is now at the top of the file, removed from here.
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logging.info("🔌 Bot shutdown via KeyboardInterrupt/SystemExit")
+        logger.info("🔌 Bot shutdown via KeyboardInterrupt/SystemExit")
+    except Exception as e:
+        logger.critical(f"❌ An unhandled error occurred: {e}", exc_info=e)
+        sys.exit(1)
